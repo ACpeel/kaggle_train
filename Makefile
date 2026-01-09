@@ -15,3 +15,4 @@ train:
 
 train_force:
 	python scripts/train.py --force $(ARGS)
+

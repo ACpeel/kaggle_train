@@ -20,9 +20,9 @@
 
 >  可以不用，但最好有，方便进行一键注册等
 
-4. 准备好自己的github仓库（SSH）
+4. 准备好自己的github仓库
 
-> 一些私有库（private repo）可能需要授权，本教程通过ssh密钥授权，可能对你的账户或库造成一些影响，如有介意，请调整权限设置
+> 一些私有库（private repo）可能需要授权，需通过ssh密钥授权，可能对你的账户或库造成一些安全隐患，请自行评估风险
 
 
 
@@ -30,7 +30,7 @@
 
 > 准备好上述内容后就可以开始食用
 
-##### Kaggle平台准备
+#### Kaggle平台准备
 
 - 注册kaggle账号
 
@@ -54,7 +54,9 @@
 
 ![Notebook_Init](./assets/notebook_init.png)
 
-依次点击上方settings —> Turn On Internet **重要** 如不打开无法连接外网
+**重要**：
+依次点击上方settings —> Turn On Internet
+如不打开无法连接外网
 
 再进入 settings—> Accelerator —> GPU T4 * 2，选择一个你喜欢的GPU/TPU
 
@@ -72,26 +74,96 @@ Turn on以后点击右上角开机，稍作等待即可开始操作这台GPU云�
 
 > 欣赏一下免费的30GB  GPU ， 30GB RAM，50GB+ 存储空间，即可**关机**，进行其他准备
 
-##### 库准备
+
+
+
+#### 训练演示（2x T4 / 30GB RAM）
 
 > 这里以本仓库为例
 
-##### 训练演示（2x T4 / 30GB RAM）
+- 启动你的notebook
 
-- 在 Kaggle Notebook 右侧 `Add data` 添加数据集 `phucthaiv02/butterfly-image-classification`（会挂载到 `/kaggle/input/butterfly-image-classification`）
-- 克隆仓库后，在仓库根目录执行：
-  - 下载到工作目录（可选）：`!make -C kaggle_train dataset`
-  - 使用业界强基线（默认 ConvNeXtV2，自动用 2 张 T4）：`!make -C kaggle_train train`
+- 在 Kaggle Notebook 右侧 `Add data` 添加数据集 `phucthaiv02/butterfly-image-classification` 
 
-常用配置（推荐先从这些开始）：
-- EfficientNetV2：`!python kaggle_train/scripts/train.py --model tf_efficientnetv2_m --batch-size 64 --epochs 20 --num-workers 8`
-- 更省显存：`!python kaggle_train/scripts/train.py --model tf_efficientnetv2_s --batch-size 96 --epochs 20 --num-workers 8`
-- 关闭多卡（调试用）：`!python kaggle_train/scripts/train.py --no-multi-gpu`
+    - 该数据集会挂载到 /kaggle/input/
 
-如果你看到 `Couldn't find any class folder`：
-- 说明数据集不是 `ImageFolder(按类别子目录)` 格式，而是 `CSV(文件名,标签)+图片目录` 格式
-- 解决方式：把 Kaggle 数据集 `Add data` 后，传参指定 CSV/图片目录，例如：
-  - `!python kaggle_train/scripts/train.py --data-dir /kaggle/input/butterfly-image-classification --train-csv /kaggle/input/butterfly-image-classification/train.csv --images-dir /kaggle/input/butterfly-image-classification/train`
+    - 可以通过notebook的魔法指令来执行shell命令
 
-训练输出：
-- 最佳权重：`kaggle_train/outputs/butterfly_run/best.pt`
+        ```notebook
+        %ls /kaggle/input/
+        !ls /kaggle/input/
+        ```
+或者存在下载链接的，可以通过wget等指令下载,亦或者通过编写python脚本下载 (scripts/download_dataset.py)
+
+> 自编python记得启用多线程下载
+
+```bash
+# wget下载
+!wget DATASET_DOWNLOAD_URL -O /kaggle/input/YOUR_DATASET_NAME.zip
+# 解压
+!unzip /kaggle/input/YOUR_DATASET_NAME.zip -d /kaggle/input/YOUR_DATASET_NAME
+```
+> 编写的训练脚本要符合数据集结构哦
+
+
+- 克隆代码仓库
+
+    ```shell
+    !git clone https://github.com/ACpeel/kaggle_train.git
+    ```
+
+    > 该指令会在`/kaggle/working/`目录下执行
+
+    ```shell
+    !pwd
+    !ls /kaggle/working/kaggle_train
+    ```
+
+##### 开始训练
+
+
+```bash
+!nvidia-smi
+```
+
+![nvidia_smi](./assets/nvidia-smi.png)
+
+一些自己的库，可能需要创建conda或uv环境并安装依赖
+```bash
+# 自行解决
+!pip install -r YOUR_REPO/requirements.txt
+```
+
+```bash
+# 将数据集移动到合适位置
+!make -C kaggle_train dataset
+
+# 或者使用
+!python kaggle_train/scripts/get_dataset.py
+```
+
+使用efficientnetv2模型做分类训练
+
+```bash
+ !make -C kaggle_train train ARGS="--run-dir outputs/butterfly_res --model tf_efficientnetv2_m"
+```
+
+
+make 是linux支持的构建指令，通过Makefile来实现管理
+
+如不想通过make，也可以直接使用如下命令
+
+```bash
+!python kaggle_train/scripts/train.py --run-dir outputs/butterfly_res --model tf_efficientnetv2_m
+```
+
+![training](./assets/training.png)
+
+
+
+
+
+--- 
+
+![Powered by Codex](https://img.shields.io/badge/Powered%20by-Codex-blue)
+
