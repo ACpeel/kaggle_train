@@ -54,7 +54,9 @@
 
 ![Notebook_Init](./assets/notebook_init.png)
 
-点击上方settings—> Accelerator —> GPU T4 * 2，选择一个你喜欢的GPU/TPU
+依次点击上方settings —> Turn On Internet **重要** 如不打开无法连接外网
+
+再进入 settings—> Accelerator —> GPU T4 * 2，选择一个你喜欢的GPU/TPU
 
 > 弹出提示 每周有 30 小时开机额度
 
@@ -86,6 +88,10 @@ Turn on以后点击右上角开机，稍作等待即可开始操作这台GPU云�
 - 更省显存：`!python kaggle_train/scripts/train.py --model tf_efficientnetv2_s --batch-size 96 --epochs 20 --num-workers 8`
 - 关闭多卡（调试用）：`!python kaggle_train/scripts/train.py --no-multi-gpu`
 
+如果你看到 `Couldn't find any class folder`：
+- 说明数据集不是 `ImageFolder(按类别子目录)` 格式，而是 `CSV(文件名,标签)+图片目录` 格式
+- 解决方式：把 Kaggle 数据集 `Add data` 后，传参指定 CSV/图片目录，例如：
+  - `!python kaggle_train/scripts/train.py --data-dir /kaggle/input/butterfly-image-classification --train-csv /kaggle/input/butterfly-image-classification/train.csv --images-dir /kaggle/input/butterfly-image-classification/train`
+
 训练输出：
 - 最佳权重：`kaggle_train/outputs/butterfly_run/best.pt`
-

@@ -8,14 +8,18 @@ from pathlib import Path
 import shutil
 
 import torch
-from torch.utils.data import DataLoader, random_split
-from torchvision.datasets import ImageFolder
+from torch.utils.data import DataLoader
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from kaggle_train.train.model import ModelSpec, create_model
+from kaggle_train.train.data import (
+    TransformDataset,
+    load_trainable_dataset,
+    make_split_indices,
+)
 from kaggle_train.train.training import TrainConfig, fit
 
 
@@ -80,6 +84,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--val-split", type=float, default=0.1, help="Used when no val/valid folder exists.")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--no-multi-gpu", action="store_true", help="Disable multi-GPU (DataParallel).")
+    parser.add_argument("--train-csv", type=Path, default=None, help="Optional CSV file with train labels.")
+    parser.add_argument("--val-csv", type=Path, default=None, help="Optional CSV file with val labels.")
+    parser.add_argument(
+        "--images-dir",
+        type=Path,
+        default=None,
+        help="Optional directory that contains images referenced by CSV (defaults to data-dir/train then data-dir).",
+    )
     parser.add_argument(
         "--run-dir",
         type=Path,
@@ -117,8 +129,14 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 p.unlink()
 
-    base_train = ImageFolder(root=str(train_root))
-    spec = ModelSpec(name=args.model, num_classes=len(base_train.classes), pretrained=True)
+    train_bundle = load_trainable_dataset(
+        data_dir=data_dir,
+        split_dir=train_root,
+        split_hint="train",
+        csv_path=args.train_csv,
+        images_dir=args.images_dir,
+    )
+    spec = ModelSpec(name=args.model, num_classes=len(train_bundle.classes), pretrained=True)
     model = create_model(spec)
     if torch.cuda.device_count() > 1 and not args.no_multi_gpu:
         print(f"Using torch.nn.DataParallel with {torch.cuda.device_count()} GPUs")
@@ -128,18 +146,21 @@ def main(argv: list[str] | None = None) -> int:
     train_tf, val_tf, data_cfg = _try_build_transforms(model_for_cfg)
 
     if val_root is not None and val_root.exists():
-        train_ds = ImageFolder(root=str(train_root), transform=train_tf)
-        val_ds = ImageFolder(root=str(val_root), transform=val_tf)
-    else:
-        full = ImageFolder(root=str(train_root), transform=train_tf)
-        val_count = max(int(len(full) * args.val_split), 1)
-        train_count = max(len(full) - val_count, 1)
-        train_ds, val_ds = random_split(
-            full,
-            lengths=[train_count, val_count],
-            generator=torch.Generator().manual_seed(args.seed),
+        val_bundle = load_trainable_dataset(
+            data_dir=data_dir,
+            split_dir=val_root,
+            split_hint="val",
+            csv_path=args.val_csv,
+            images_dir=args.images_dir,
         )
-        val_ds.dataset.transform = val_tf
+        train_ds = TransformDataset(train_bundle.base, train_tf)
+        val_ds = TransformDataset(val_bundle.base, val_tf)
+    else:
+        train_idx, val_idx = make_split_indices(len(train_bundle.base), val_split=args.val_split, seed=args.seed)
+        full_train = TransformDataset(train_bundle.base, train_tf)
+        full_val = TransformDataset(train_bundle.base, val_tf)
+        train_ds = torch.utils.data.Subset(full_train, train_idx)
+        val_ds = torch.utils.data.Subset(full_val, val_idx)
 
     pin_memory = torch.cuda.is_available()
     train_loader = DataLoader(
@@ -171,8 +192,8 @@ def main(argv: list[str] | None = None) -> int:
     extra_state = {
         "model_spec": asdict(spec),
         "data_config": data_cfg,
-        "classes": base_train.classes,
-        "class_to_idx": base_train.class_to_idx,
+        "classes": train_bundle.classes,
+        "class_to_idx": train_bundle.class_to_idx,
     }
     summary = fit(
         model=model,
