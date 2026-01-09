@@ -1,4 +1,6 @@
-.PHONY: dataset train help
+.PHONY: dataset train train_force help
+
+ARGS ?=
 
 help:
 	@echo "Targets:"
@@ -9,5 +11,7 @@ dataset:
 	python scripts/get_dataset.py
 
 train:
-	python scripts/train.py
+	python scripts/train.py $(ARGS)
 
+train_force:
+	python scripts/train.py --force $(ARGS)
