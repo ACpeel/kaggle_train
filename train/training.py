@@ -22,6 +22,16 @@ class TrainConfig:
     grad_clip_norm: float | None = 1.0
 
 
+def _progress_iter(iterable, enabled: bool, **tqdm_kwargs):
+    if not enabled:
+        return iterable
+    try:
+        from tqdm.auto import tqdm  # type: ignore
+    except Exception:
+        return iterable
+    return tqdm(iterable, **tqdm_kwargs)
+
+
 def _device() -> torch.device:
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -49,14 +59,29 @@ def _build_scheduler(optimizer: torch.optim.Optimizer, cfg: TrainConfig):
     )
 
 
+def _build_scaler(cfg: TrainConfig, device: torch.device):
+    enabled = cfg.amp and device.type == "cuda"
+    amp_mod = getattr(torch, "amp", None)
+    if amp_mod is not None and hasattr(amp_mod, "GradScaler"):
+        return amp_mod.GradScaler("cuda", enabled=enabled)
+    return torch.cuda.amp.GradScaler(enabled=enabled)
+
+
 @torch.no_grad()
-def validate(model: nn.Module, loader: DataLoader, loss_fn: nn.Module, device: torch.device) -> dict[str, float]:
+def validate(
+    model: nn.Module,
+    loader: DataLoader,
+    loss_fn: nn.Module,
+    device: torch.device,
+    progress: bool,
+    desc: str,
+) -> dict[str, float]:
     model.eval()
     total_loss = 0.0
     total_correct = 0
     total_count = 0
 
-    for images, targets in loader:
+    for images, targets in _progress_iter(loader, enabled=progress, desc=desc, leave=False):
         images = images.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
 
@@ -79,16 +104,19 @@ def train_one_epoch(
     loader: DataLoader,
     loss_fn: nn.Module,
     optimizer: torch.optim.Optimizer,
-    scaler: torch.cuda.amp.GradScaler | None,
+    scaler,
     device: torch.device,
     grad_clip_norm: float | None,
+    progress: bool,
+    desc: str,
 ) -> dict[str, float]:
     model.train()
     total_loss = 0.0
     total_correct = 0
     total_count = 0
 
-    for images, targets in loader:
+    pbar = _progress_iter(loader, enabled=progress, desc=desc, leave=False)
+    for images, targets in pbar:
         images = images.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
 
@@ -117,6 +145,13 @@ def train_one_epoch(
         total_correct += count_correct_top1(logits, targets)
         total_count += int(batch_size)
 
+        if progress and hasattr(pbar, "set_postfix"):
+            pbar.set_postfix(
+                loss=f"{(total_loss / max(total_count, 1)):.4f}",
+                acc=f"{(total_correct / max(total_count, 1)):.4f}",
+                lr=f"{optimizer.param_groups[0]['lr']:.2e}",
+            )
+
     return {
         "train_loss": total_loss / max(total_count, 1),
         "train_acc": total_correct / max(total_count, 1),
@@ -130,6 +165,7 @@ def fit(
     cfg: TrainConfig,
     run_dir: Path,
     extra_state: dict[str, Any] | None = None,
+    progress: bool = True,
 ) -> dict[str, float]:
     device = _device()
     model.to(device)
@@ -139,7 +175,7 @@ def fit(
     loss_fn = _build_loss(cfg.label_smoothing).to(device)
     optimizer = _build_optimizer(model, cfg)
     scheduler = _build_scheduler(optimizer, cfg)
-    scaler = torch.cuda.amp.GradScaler(enabled=(cfg.amp and device.type == "cuda"))
+    scaler = _build_scaler(cfg, device)
 
     best_val_acc = -1.0
     best_path = run_dir / "best.pt"
@@ -155,8 +191,17 @@ def fit(
             scaler=scaler if scaler.is_enabled() else None,
             device=device,
             grad_clip_norm=cfg.grad_clip_norm,
+            progress=progress,
+            desc=f"train {epoch + 1}/{cfg.epochs}",
         )
-        val_metrics = validate(model=model, loader=val_loader, loss_fn=loss_fn, device=device)
+        val_metrics = validate(
+            model=model,
+            loader=val_loader,
+            loss_fn=loss_fn,
+            device=device,
+            progress=progress,
+            desc=f"val   {epoch + 1}/{cfg.epochs}",
+        )
         scheduler.step()
 
         metrics = {"epoch": epoch + 1, **train_metrics, **val_metrics, "lr": optimizer.param_groups[0]["lr"]}

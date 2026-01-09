@@ -84,6 +84,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--val-split", type=float, default=0.1, help="Used when no val/valid folder exists.")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--no-multi-gpu", action="store_true", help="Disable multi-GPU (DataParallel).")
+    parser.add_argument("--no-progress", action="store_true", help="Disable tqdm progress bars.")
     parser.add_argument("--train-csv", type=Path, default=None, help="Optional CSV file with train labels.")
     parser.add_argument("--val-csv", type=Path, default=None, help="Optional CSV file with val labels.")
     parser.add_argument(
@@ -202,6 +203,7 @@ def main(argv: list[str] | None = None) -> int:
         cfg=cfg,
         run_dir=args.run_dir,
         extra_state=extra_state,
+        progress=(not args.no_progress),
     )
     print(summary)
     return 0

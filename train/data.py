@@ -12,8 +12,18 @@ from torchvision.datasets import ImageFolder
 
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".gif"}
 
-_FILE_COL_CANDIDATES = ("image", "img", "file", "filename", "path", "filepath")
-_LABEL_COL_CANDIDATES = ("label", "class", "category", "species", "target")
+_FILE_COL_CANDIDATES = (
+    "image",
+    "img",
+    "file",
+    "filename",
+    "file_name",
+    "image_name",
+    "path",
+    "filepath",
+    "image_path",
+)
+_LABEL_COL_CANDIDATES = ("label", "labels", "class", "category", "species", "target")
 
 
 def _has_images(path: Path) -> bool:
@@ -41,17 +51,18 @@ def _normalize_col(col: str) -> str:
 
 
 def _infer_csv_columns(fieldnames: Iterable[str]) -> tuple[str | None, str | None]:
-    normalized = [_normalize_col(c) for c in fieldnames]
+    fieldnames_list = list(fieldnames)
+    norm_to_orig = {_normalize_col(orig): orig for orig in fieldnames_list}
 
     file_col = None
     label_col = None
     for cand in _FILE_COL_CANDIDATES:
-        if cand in normalized:
-            file_col = cand
+        if cand in norm_to_orig:
+            file_col = norm_to_orig[cand]
             break
     for cand in _LABEL_COL_CANDIDATES:
-        if cand in normalized:
-            label_col = cand
+        if cand in norm_to_orig:
+            label_col = norm_to_orig[cand]
             break
 
     if file_col is None or label_col is None:
@@ -195,8 +206,8 @@ def load_trainable_dataset(
     label_values: list[str] = []
     resolved: list[tuple[Path, str]] = []
     for row in rows:
-        filename = row.get(file_col) or row.get(file_col.upper()) or row.get(file_col.title())
-        label = row.get(label_col) or row.get(label_col.upper()) or row.get(label_col.title())
+        filename = row.get(file_col)
+        label = row.get(label_col)
         if not filename or label is None:
             continue
         path = _resolve_image_path(str(filename), search_dirs=search_dirs, index=index)
@@ -227,4 +238,3 @@ def make_split_indices(n: int, val_split: float, seed: int) -> tuple[list[int], 
     train_idx = perm[:train_count]
     val_idx = perm[train_count : train_count + val_count]
     return train_idx, val_idx
-
